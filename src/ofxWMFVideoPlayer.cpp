@@ -182,7 +182,7 @@ void ofxWMFVideoPlayer::forceExit()
 
 
 	 _player->m_pEVRPresenter->lockSharedTexture();
-	 _tex.setTextureWrap(GL_CLAMP_TO_BORDER, GL_CLAMP_TO_BORDER);
+	 //_tex.setTextureWrap(GL_CLAMP_TO_BORDER, GL_CLAMP_TO_BORDER);
 	 _tex.bind();
 
 	 
