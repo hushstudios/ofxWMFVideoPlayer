@@ -1,124 +1,122 @@
 #pragma once
 
 
-//ofxWMFVideoPlayer addon written by Philippe Laulheret for Second Story (secondstory.com)
-//Based upon Windows SDK samples
-//MIT Licensing
+// ofxWMFVideoPlayer addon written by Philippe Laulheret for Second Story (secondstory.com)
+// Based upon Windows SDK samples
+// MIT Licensing
 
-
-#include "ofMain.h"
-#include "ofxWMFVideoPlayerUtils.h"
 
 #include "EVRPresenter.h"
-
+#include "ofMain.h"
+#include "ofxWMFVideoPlayerUtils.h"
 
 
 class ofxWMFVideoPlayer;
 
 
 class CPlayer;
-class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */{
+class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
 
-	private:
-		static int  _instanceCount;
-		
-		
-		HWND		_hwndPlayer;
-		
-		BOOL bRepaintClient;
-		
-		
-		int _width;
-		int _height;
+  private:
+    static int _instanceCount;
 
 
-		bool _waitForLoadedToPlay;
-		bool _isLooping;
-		bool _wantToSetVolume;
-		float _currentVolume;
+    HWND _hwndPlayer;
 
-		bool _sharedTextureCreated;
-		
-		ofTexture _tex;
-		ofPixels _pixels;
-
-		BOOL InitInstance();
-
-		
-		void                OnPlayerEvent(HWND hwnd, WPARAM pUnkPtr);
-
-		bool				loadEventSent;
-		bool				bLoaded;
+    BOOL bRepaintClient;
 
 
-		float _frameRate;
+    int _width;
+    int _height;
 
 
-	public:
-	CPlayer*	_player;
+    bool  _waitForLoadedToPlay;
+    bool  _isLooping;
+    bool  _wantToSetVolume;
+    float _currentVolume;
 
-	int _id;
-	
-	ofxWMFVideoPlayer();
-	 ~ofxWMFVideoPlayer();
+    bool _sharedTextureCreated;
 
-	 bool				loadMovie(string name);
-	 //bool 				loadMovie(string name_left, string name_right) ;
-	 void				close();
-	 void				update();
-	
-	 void				play();
-	 void				stop();		
-	 void				pause();
-	 void				setPaused( bool bPause ) ; 
+    ofTexture _tex;
+    ofPixels  _pixels;
 
-	 float				getPosition();
-	 float				getDuration();
-	 float				getFrameRate();
-
-	 void				setPosition(float pos);
-
-	 void				setVolume(float vol);
-	 float				getVolume();
-
-	 float				getHeight();
-	 float				getWidth();
-
-	 bool				isPlaying(); 
-	 bool				isStopped();
-	 bool				isPaused();
-
-	 void				setLoop(bool isLooping);
-	 bool				isLooping() { return _isLooping; }
-
-	 void				bind();
-	 void				unbind();
-	
-		ofEvent<bool>       videoLoadEvent;
+    BOOL InitInstance();
 
 
+    void OnPlayerEvent( HWND hwnd, WPARAM pUnkPtr );
 
-	 void				setLoopState( ofLoopType loopType ) ;
-	 bool				getIsMovieDone( ) ; 
-
-	 bool isLoaded();
-	 
-	 unsigned char * getPixels();
-	 ofPixels& getPixelsRef(){ return _pixels; }
-	 ofTexture * getTexture(){ return &_tex; };
-	 bool setPixelFormat(ofPixelFormat pixelFormat);
-	 ofPixelFormat getPixelFormat();
-
-	 bool isFrameNew();
+    bool loadEventSent;
+    bool bLoaded;
 
 
-	 void draw(int x, int y , int w, int h);
-	 void draw(int x, int y) { draw(x,y,getWidth(),getHeight()); }
-
-	 HWND getHandle() { return _hwndPlayer;}
-	 LRESULT WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-
-	 static void forceExit();
+    float _frameRate;
 
 
+  public:
+    CPlayer *_player;
+
+    int _id;
+
+    ofxWMFVideoPlayer();
+    ~ofxWMFVideoPlayer();
+
+    bool loadMovie( string name );
+    // bool 				loadMovie(string name_left, string name_right) ;
+    void close();
+    void update();
+
+    void play();
+    void stop();
+    void pause();
+    void setPaused( bool bPause );
+
+    float getPosition();
+    float getDuration();
+    float getFrameRate();
+
+    void setPosition( float pos );
+
+    void  setVolume( float vol );
+    float getVolume();
+
+    float getHeight();
+    float getWidth();
+
+    bool isPlaying();
+    bool isStopped();
+    bool isPaused();
+
+    void setLoop( bool isLooping );
+    bool isLooping() { return _isLooping; }
+
+    void bind();
+    void unbind();
+
+    void lock();
+    void unlock(); 
+
+    ofEvent<bool> videoLoadEvent;
+
+
+    void setLoopState( ofLoopType loopType );
+    bool getIsMovieDone();
+
+    bool isLoaded();
+
+    unsigned char *getPixels();
+    ofPixels &     getPixelsRef() { return _pixels; }
+    ofTexture *    getTexture() { return &_tex; };
+    bool           setPixelFormat( ofPixelFormat pixelFormat );
+    ofPixelFormat  getPixelFormat();
+
+    bool isFrameNew();
+
+
+    void draw( int x, int y, int w, int h );
+    void draw( int x, int y ) { draw( x, y, getWidth(), getHeight() ); }
+
+    HWND    getHandle() { return _hwndPlayer; }
+    LRESULT WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam );
+
+    static void forceExit();
 };

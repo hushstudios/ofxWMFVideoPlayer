@@ -1,365 +1,356 @@
-//ofxWMFVideoPlayer addon written by Philippe Laulheret for Second Story (secondstory.com)
-//MIT Licensing
+// ofxWMFVideoPlayer addon written by Philippe Laulheret for Second Story (secondstory.com)
+// MIT Licensing
 
 
-#include "ofxWMFVideoPlayerUtils.h"
 #include "ofxWMFVideoPlayer.h"
 
+#include "ofxWMFVideoPlayerUtils.h"
 
 
-typedef std::pair<HWND,ofxWMFVideoPlayer*> PlayerItem;
-list<PlayerItem> g_WMFVideoPlayers;
+typedef std::pair<HWND, ofxWMFVideoPlayer *> PlayerItem;
+list<PlayerItem>                             g_WMFVideoPlayers;
 
 
-
-
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam );
 // Message handlers
 
 
-ofxWMFVideoPlayer* findPlayers(HWND hwnd)
+ofxWMFVideoPlayer *findPlayers( HWND hwnd )
 {
-	for (PlayerItem e : g_WMFVideoPlayers)
-	{
-		if (e.first == hwnd) return e.second;
-	}
+    for( PlayerItem e : g_WMFVideoPlayers ) {
+        if( e.first == hwnd )
+            return e.second;
+    }
 
-	return NULL;
+    return NULL;
 }
 
 
-int  ofxWMFVideoPlayer::_instanceCount=0;
+int ofxWMFVideoPlayer::_instanceCount = 0;
 
 
-ofxWMFVideoPlayer::ofxWMFVideoPlayer() : _player(NULL)
+ofxWMFVideoPlayer::ofxWMFVideoPlayer()
+    : _player( NULL )
 {
-	
-	if (_instanceCount ==0)  {
-		if (!ofIsGLProgrammableRenderer()){
-			if(wglewIsSupported("WGL_NV_DX_interop")){
-				ofLogVerbose("ofxWMFVideoPlayer") << "WGL_NV_DX_interop supported";
-			}else{
-				ofLogError("ofxWMFVideoPlayer") << "WGL_NV_DX_interop not supported. Upgrade your graphc drivers and try again.";
-				return;
-			}
-		}
+
+    if( _instanceCount == 0 ) {
+        if( !ofIsGLProgrammableRenderer() ) {
+            if( wglewIsSupported( "WGL_NV_DX_interop" ) ) {
+                ofLogVerbose( "ofxWMFVideoPlayer" ) << "WGL_NV_DX_interop supported";
+            }
+            else {
+                ofLogError( "ofxWMFVideoPlayer" ) << "WGL_NV_DX_interop not supported. Upgrade your graphc drivers and try again.";
+                return;
+            }
+        }
 
 
-		HRESULT hr = MFStartup(MF_VERSION);
-	  if (!SUCCEEDED(hr))
-    {
-		ofLog(OF_LOG_ERROR, "ofxWMFVideoPlayer: Error while loading MF");
+        HRESULT hr = MFStartup( MF_VERSION );
+        if( !SUCCEEDED( hr ) ) {
+            ofLog( OF_LOG_ERROR, "ofxWMFVideoPlayer: Error while loading MF" );
+        }
     }
-	}
 
-	_id = _instanceCount;
-	_instanceCount++;
-	this->InitInstance();
-	
+    _id = _instanceCount;
+    _instanceCount++;
+    this->InitInstance();
 
-	_waitForLoadedToPlay = false;
-	_sharedTextureCreated = false;
-	_wantToSetVolume = false;
-	_currentVolume = 1.0;
-	_frameRate = 0.0f;
-	
-	
+
+    _waitForLoadedToPlay = false;
+    _sharedTextureCreated = false;
+    _wantToSetVolume = false;
+    _currentVolume = 1.0;
+    _frameRate = 0.0f;
 }
-	 
-	 
-ofxWMFVideoPlayer::~ofxWMFVideoPlayer() {
-	if (_player)
-    {
-		if (_sharedTextureCreated) _player->m_pEVRPresenter->releaseSharedTexture();
-		_player->Shutdown();
-        SafeRelease(&_player);
+
+
+ofxWMFVideoPlayer::~ofxWMFVideoPlayer()
+{
+    if( _player ) {
+        _player->Shutdown();
+        SafeRelease( &_player );
     }
 
-	cout << "Player " << _id << " Terminated" << endl;
-	_instanceCount--;
-	if (_instanceCount == 0) {
-		 MFShutdown();
+    cout << "Player " << _id << " Terminated" << endl;
+    _instanceCount--;
+    if( _instanceCount == 0 ) {
+        MFShutdown();
 
-		 cout << "Shutting down MF" << endl;
-	}
-
+        cout << "Shutting down MF" << endl;
+    }
 }
 
 void ofxWMFVideoPlayer::forceExit()
 {
-	if (_instanceCount != 0) 
-	{
-		cout << "Shutting down MF some ofxWMFVideoPlayer remains" << endl;
-		MFShutdown();
-	}
-		
-
-		
-	
+    if( _instanceCount != 0 ) {
+        cout << "Shutting down MF some ofxWMFVideoPlayer remains" << endl;
+        MFShutdown();
+    }
 }
 
- bool	ofxWMFVideoPlayer::	loadMovie(string name) 
- {
-	 loadEventSent = false;
-	 bLoaded = false;
-
-	 if (!_player) { 
-		ofLogError("ofxWMFVideoPlayer") << "Player not created. Can't open the movie.";
-		 return false;
-	 }
-	 	DWORD fileAttr = GetFileAttributesA(ofToDataPath(name).c_str());
-		if (fileAttr == INVALID_FILE_ATTRIBUTES) {
-		stringstream s;
-		s << "The video file '" << name << "'is missing.";
-		ofLog(OF_LOG_ERROR,"ofxWMFVideoPlayer:" + s.str());
-		return false;
-	}
-
-		//cout << "Videoplayer[" << _id << "] loading " << name << endl;
-
-	HRESULT hr = S_OK;
-		string s = ofToDataPath(name);
-		std::wstring w(s.length(), L' ');
-		std::copy(s.begin(), s.end(), w.begin());
-
-		
-	hr = _player->OpenURL( w.c_str());
-
-	
-	_frameRate = 0.0; //reset frameRate as the new movie loaded might have a different value than previous one
-
-
-	
-	 if (!_sharedTextureCreated)
-	 {
-
-		 _width = _player->getWidth();
-		 _height = _player->getHeight();
-
-		 _tex.allocate(_width,_height,GL_RGB,true);
-
-		_player->m_pEVRPresenter->createSharedTexture(_width, _height,_tex.texData.textureID);
-		_sharedTextureCreated = true;
-	 }
-	 else 
-	 {
-		 if ((_width != _player->getWidth()) || (_height != _player->getHeight()))
-		 {
-
-			 _player->m_pEVRPresenter->releaseSharedTexture();
-
-			 _width = _player->getWidth();
-			 _height = _player->getHeight();
-
-			 _tex.allocate(_width,_height,GL_RGB,true);
-			 _player->m_pEVRPresenter->createSharedTexture(_width, _height,_tex.texData.textureID);
-
-		 }
-		 
-	 }
-	 _waitForLoadedToPlay = false;
-
-	 return false;
-
-	
- }
-
-
-
- void ofxWMFVideoPlayer::draw(int x, int y , int w, int h) {
-
-
-	 _player->m_pEVRPresenter->lockSharedTexture();
-	 _tex.draw(x,y,w,h);
-	  _player->m_pEVRPresenter->unlockSharedTexture();
-
-	 
-
- }
-
-  void ofxWMFVideoPlayer::bind() {
-
-
-	 _player->m_pEVRPresenter->lockSharedTexture();
-	 //_tex.setTextureWrap(GL_CLAMP_TO_BORDER, GL_CLAMP_TO_BORDER);
-	 _tex.bind();
-
-	 
-
- }
-    void ofxWMFVideoPlayer::unbind() {
-
-
-	 _tex.unbind();
-	  _player->m_pEVRPresenter->unlockSharedTexture();
-
-	 
-
- }
-
-
-bool  ofxWMFVideoPlayer:: isPlaying() {
-	return _player->GetState() == Started;
- }
-bool  ofxWMFVideoPlayer:: isStopped() {
-	return (_player->GetState() == Stopped || _player->GetState() == Paused);
- }
-
-bool  ofxWMFVideoPlayer:: isPaused() 
+bool ofxWMFVideoPlayer::loadMovie( string name )
 {
-	return _player->GetState() == Paused;
+    loadEventSent = false;
+    bLoaded = false;
+
+    if( !_player ) {
+        ofLogError( "ofxWMFVideoPlayer" ) << "Player not created. Can't open the movie.";
+        return false;
+    }
+    DWORD fileAttr = GetFileAttributesA( ofToDataPath( name ).c_str() );
+    if( fileAttr == INVALID_FILE_ATTRIBUTES ) {
+        stringstream s;
+        s << "The video file '" << name << "'is missing.";
+        ofLog( OF_LOG_ERROR, "ofxWMFVideoPlayer:" + s.str() );
+        return false;
+    }
+
+    // cout << "Videoplayer[" << _id << "] loading " << name << endl;
+
+    HRESULT      hr = S_OK;
+    string       s = ofToDataPath( name );
+    std::wstring w( s.length(), L' ' );
+    std::copy( s.begin(), s.end(), w.begin() );
+
+
+    hr = _player->OpenURL( w.c_str() );
+
+
+    _frameRate = 0.0; // reset frameRate as the new movie loaded might have a different value than previous one
+
+
+    if( !_sharedTextureCreated ) {
+
+        _width = _player->getWidth();
+        _height = _player->getHeight();
+
+        _tex.allocate( _width, _height, GL_RGB, true );
+
+        _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
+        _sharedTextureCreated = true;
+    }
+    else {
+        if( ( _width != _player->getWidth() ) || ( _height != _player->getHeight() ) ) {
+
+            _player->m_pEVRPresenter->releaseSharedTexture();
+
+            _width = _player->getWidth();
+            _height = _player->getHeight();
+
+            _tex.allocate( _width, _height, GL_RGB, true );
+            _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
+        }
+    }
+    _waitForLoadedToPlay = false;
+
+    return false;
 }
 
 
-
-
- void	ofxWMFVideoPlayer::	close() {
-	 _player->Shutdown();
-	 _currentVolume = 1.0;
-	 _wantToSetVolume = false;
-
-}
-void	ofxWMFVideoPlayer::	update() {
-	if (!_player) return;
-	if ((_waitForLoadedToPlay) && _player->GetState() == Paused)
-	{
-		_waitForLoadedToPlay=false;
-		_player->Play();
-		
-	}
-
-	if ((_wantToSetVolume))
-	{
-		_player->setVolume(_currentVolume);
-
-	}
-	return;
- }
-
-bool	ofxWMFVideoPlayer::getIsMovieDone( )
-{
-		bool bIsDone = false ; 
-		if ( getPosition() >= 0.99f ) 
-			bIsDone = true ; 
-
-		return bIsDone ; 
-}
-
-bool ofxWMFVideoPlayer::isLoaded(){
-	if(_player == NULL){ return false; }
-	PlayerState ps = _player->GetState();
-	return ps == PlayerState::Paused || ps == PlayerState::Stopped || ps == PlayerState::Started;
-}
-
-unsigned char * ofxWMFVideoPlayer::getPixels(){
-	if(_tex.isAllocated()){
-		_tex.readToPixels(_pixels);
-		return _pixels.getPixels();
-	}
-	return NULL;
-}
-
-bool ofxWMFVideoPlayer::setPixelFormat(ofPixelFormat pixelFormat){
-	return (pixelFormat == OF_PIXELS_RGB);
-}
-
-ofPixelFormat ofxWMFVideoPlayer::getPixelFormat(){
-	return OF_PIXELS_RGB; 
-}
-
-bool ofxWMFVideoPlayer::isFrameNew(){
-	return true;//TODO fix this
-}
-
-void	ofxWMFVideoPlayer::setPaused( bool bPause ) 
-{
-	if ( bPause == true ) 
-		pause() ; 
-	else
-		play() ; 
-}
-	
-void	ofxWMFVideoPlayer::	play() 
+void ofxWMFVideoPlayer::draw( int x, int y, int w, int h )
 {
 
-	if (!_player) return;
-	if (_player->GetState()  == OpenPending) _waitForLoadedToPlay = true;
-	_player->Play();
+
+    _player->m_pEVRPresenter->lockSharedTexture();
+    _tex.draw( x, y, w, h );
+    _player->m_pEVRPresenter->unlockSharedTexture();
 }
 
-void	ofxWMFVideoPlayer::	stop() 
+void ofxWMFVideoPlayer::bind()
 {
-	_player->Stop();
-}
 
-void	ofxWMFVideoPlayer::	pause() 
+
+    _player->m_pEVRPresenter->lockSharedTexture();
+    //_tex.setTextureWrap(GL_CLAMP_TO_BORDER, GL_CLAMP_TO_BORDER);
+    _tex.bind();
+}
+void ofxWMFVideoPlayer::unbind()
 {
-	_player->Pause();
+
+
+    _tex.unbind();
+    _player->m_pEVRPresenter->unlockSharedTexture();
 }
 
-void 	ofxWMFVideoPlayer::setLoopState( ofLoopType loopType ) 
+
+bool ofxWMFVideoPlayer::isPlaying()
 {
-	switch ( loopType ) 
-	{
-		case OF_LOOP_NONE : 
-			setLoop( false ) ;
-			break ; 
-		case OF_LOOP_NORMAL : 
-			setLoop( true ) ; 
-			break; 
-		default : 
-			ofLogError ( "ofxWMFVideoPlayer::setLoopState LOOP TYPE NOT SUPPORTED" ) << loopType << endl ; 
-			break ; 
-	}
+    return _player->GetState() == Started;
 }
-
-float 			ofxWMFVideoPlayer::	getPosition() 
+bool ofxWMFVideoPlayer::isStopped()
 {
-	return ( _player->getPosition() / getDuration() ); 
-	//this returns it in seconds
-	//	return _player->getPosition();
+    return ( _player->GetState() == Stopped || _player->GetState() == Paused );
 }
 
-float 			ofxWMFVideoPlayer::	getDuration() {
-	return _player->getDuration();
-}
-
-void ofxWMFVideoPlayer::setPosition(float pos)
+bool ofxWMFVideoPlayer::isPaused()
 {
-	_player->setPosition(pos * getDuration());
+    return _player->GetState() == Paused;
 }
 
-void ofxWMFVideoPlayer::setVolume(float vol)
-{
-	if ((_player ) && (_player->GetState() != OpenPending) && (_player->GetState() != Closing) && (_player->GetState() != Closed))  {
-		_player->setVolume(vol);
-		_wantToSetVolume = false;
-	}
-	else {
-		_wantToSetVolume = true;
-	}
-	_currentVolume = vol;
 
+void ofxWMFVideoPlayer::close()
+{
+    _player->Shutdown();
+    _currentVolume = 1.0;
+    _wantToSetVolume = false;
+}
+void ofxWMFVideoPlayer::update()
+{
+    if( !_player )
+        return;
+    if( ( _waitForLoadedToPlay ) && _player->GetState() == Paused ) {
+        _waitForLoadedToPlay = false;
+        _player->Play();
+    }
+
+    if( ( _wantToSetVolume ) ) {
+        _player->setVolume( _currentVolume );
+    }
+    return;
+}
+
+bool ofxWMFVideoPlayer::getIsMovieDone()
+{
+    bool bIsDone = false;
+    if( getPosition() >= 0.99f )
+        bIsDone = true;
+
+    return bIsDone;
+}
+
+bool ofxWMFVideoPlayer::isLoaded()
+{
+    if( _player == NULL ) {
+        return false;
+    }
+    PlayerState ps = _player->GetState();
+    return ps == PlayerState::Paused || ps == PlayerState::Stopped || ps == PlayerState::Started;
+}
+
+unsigned char *ofxWMFVideoPlayer::getPixels()
+{
+    if( _tex.isAllocated() ) {
+        _tex.readToPixels( _pixels );
+        return _pixels.getPixels();
+    }
+    return NULL;
+}
+
+bool ofxWMFVideoPlayer::setPixelFormat( ofPixelFormat pixelFormat )
+{
+    return ( pixelFormat == OF_PIXELS_RGB );
+}
+
+ofPixelFormat ofxWMFVideoPlayer::getPixelFormat()
+{
+    return OF_PIXELS_RGB;
+}
+
+bool ofxWMFVideoPlayer::isFrameNew()
+{
+    return true; // TODO fix this
+}
+
+void ofxWMFVideoPlayer::setPaused( bool bPause )
+{
+    if( bPause == true )
+        pause();
+    else
+        play();
+}
+
+void ofxWMFVideoPlayer::play()
+{
+
+    if( !_player )
+        return;
+    if( _player->GetState() == OpenPending )
+        _waitForLoadedToPlay = true;
+    _player->Play();
+}
+
+void ofxWMFVideoPlayer::stop()
+{
+    _player->Stop();
+}
+
+void ofxWMFVideoPlayer::pause()
+{
+    _player->Pause();
+}
+
+void ofxWMFVideoPlayer::setLoopState( ofLoopType loopType )
+{
+    switch( loopType ) {
+    case OF_LOOP_NONE:
+        setLoop( false );
+        break;
+    case OF_LOOP_NORMAL:
+        setLoop( true );
+        break;
+    default:
+        ofLogError( "ofxWMFVideoPlayer::setLoopState LOOP TYPE NOT SUPPORTED" ) << loopType << endl;
+        break;
+    }
+}
+
+float ofxWMFVideoPlayer::getPosition()
+{
+    return ( _player->getPosition() / getDuration() );
+    // this returns it in seconds
+    //	return _player->getPosition();
+}
+
+float ofxWMFVideoPlayer::getDuration()
+{
+    return _player->getDuration();
+}
+
+void ofxWMFVideoPlayer::setPosition( float pos )
+{
+    _player->setPosition( pos * getDuration() );
+}
+
+void ofxWMFVideoPlayer::setVolume( float vol )
+{
+    if( ( _player ) && ( _player->GetState() != OpenPending ) && ( _player->GetState() != Closing ) && ( _player->GetState() != Closed ) ) {
+        _player->setVolume( vol );
+        _wantToSetVolume = false;
+    }
+    else {
+        _wantToSetVolume = true;
+    }
+    _currentVolume = vol;
 }
 
 float ofxWMFVideoPlayer::getVolume()
 {
-	return _player->getVolume();
+    return _player->getVolume();
 }
 
 float ofxWMFVideoPlayer::getFrameRate()
 {
-	if (!_player) return 0.0f;
-	if (_frameRate == 0.0f) _frameRate = _player->getFrameRate();
-	return _frameRate;
+    if( !_player )
+        return 0.0f;
+    if( _frameRate == 0.0f )
+        _frameRate = _player->getFrameRate();
+    return _frameRate;
 }
 
-float	ofxWMFVideoPlayer::getHeight() { return _player->getHeight(); }
-float	ofxWMFVideoPlayer::getWidth() { return _player->getWidth(); }
+float ofxWMFVideoPlayer::getHeight()
+{
+    return _player->getHeight();
+}
+float ofxWMFVideoPlayer::getWidth()
+{
+    return _player->getWidth();
+}
 
-void  ofxWMFVideoPlayer::setLoop(bool isLooping) { _isLooping = isLooping; _player->setLooping(isLooping); }
-
+void ofxWMFVideoPlayer::setLoop( bool isLooping )
+{
+    _isLooping = isLooping;
+    _player->setLooping( isLooping );
+}
 
 
 //-----------------------------------
@@ -368,149 +359,140 @@ void  ofxWMFVideoPlayer::setLoop(bool isLooping) { _isLooping = isLooping; _play
 
 
 // Handler for Media Session events.
-void ofxWMFVideoPlayer::OnPlayerEvent(HWND hwnd, WPARAM pUnkPtr)
+void ofxWMFVideoPlayer::OnPlayerEvent( HWND hwnd, WPARAM pUnkPtr )
 {
-    HRESULT hr = _player->HandleEvent(pUnkPtr);
-	PlayerState state;
+    HRESULT     hr = _player->HandleEvent( pUnkPtr );
+    PlayerState state;
 
-	if (_player->GetState() == 3)
-	{
+    if( _player->GetState() == 3 ) {
 
-		if (!loadEventSent){
-			bLoaded = true;
-			ofNotifyEvent(videoLoadEvent,bLoaded,this);
-			loadEventSent = true;
-		}
-	}
-
-    if (FAILED(hr))
-    {
-		if (!loadEventSent){
-			bLoaded = false;
-			ofNotifyEvent(videoLoadEvent,bLoaded,this);
-			loadEventSent = true;
-		}
-
-        ofLogError("ofxWMFVideoPlayer", "An error occurred.");
+        if( !loadEventSent ) {
+            bLoaded = true;
+            ofNotifyEvent( videoLoadEvent, bLoaded, this );
+            loadEventSent = true;
+        }
     }
- }
+
+    if( FAILED( hr ) ) {
+        if( !loadEventSent ) {
+            bLoaded = false;
+            ofNotifyEvent( videoLoadEvent, bLoaded, this );
+            loadEventSent = true;
+        }
+
+        ofLogError( "ofxWMFVideoPlayer", "An error occurred." );
+    }
+}
 
 
-
-LRESULT CALLBACK WndProcDummy(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndProcDummy( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
 
 
-    switch (message)
-    {
+    switch( message ) {
 
-    case WM_CREATE:
-		{
-			return DefWindowProc(hwnd, message, wParam, lParam);
-			
-		}
-    default:
-		{
-		ofxWMFVideoPlayer*   myPlayer = findPlayers(hwnd);
-		 if (!myPlayer) return DefWindowProc(hwnd, message, wParam, lParam);
-		 return myPlayer->WndProc (hwnd, message, wParam, lParam);
-		}
+    case WM_CREATE: {
+        return DefWindowProc( hwnd, message, wParam, lParam );
+    }
+    default: {
+        ofxWMFVideoPlayer *myPlayer = findPlayers( hwnd );
+        if( !myPlayer )
+            return DefWindowProc( hwnd, message, wParam, lParam );
+        return myPlayer->WndProc( hwnd, message, wParam, lParam );
+    }
     }
     return 0;
 }
 
 
-
-LRESULT  ofxWMFVideoPlayer::WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT ofxWMFVideoPlayer::WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
-    switch (message)
-    {
+    switch( message ) {
 
     case WM_DESTROY:
-        PostQuitMessage(0);
+        PostQuitMessage( 0 );
         break;
 
 
     case WM_APP_PLAYER_EVENT:
-        OnPlayerEvent(hwnd, wParam);
+        OnPlayerEvent( hwnd, wParam );
         break;
 
     default:
-        return DefWindowProc(hwnd, message, wParam, lParam);
+        return DefWindowProc( hwnd, message, wParam, lParam );
     }
     return 0;
 }
-
-
-
 
 
 //  Create the application window.
 BOOL ofxWMFVideoPlayer::InitInstance()
 {
-	PCWSTR szWindowClass = L"MFBASICPLAYBACK" ;
-    HWND hwnd;
+    PCWSTR     szWindowClass = L"MFBASICPLAYBACK";
+    HWND       hwnd;
     WNDCLASSEX wcex;
 
- //   g_hInstance = hInst; // Store the instance handle.
+    //   g_hInstance = hInst; // Store the instance handle.
 
     // Register the window class.
-    ZeroMemory(&wcex, sizeof(WNDCLASSEX));
-    wcex.cbSize         = sizeof(WNDCLASSEX);
-    wcex.style          = CS_HREDRAW | CS_VREDRAW  ;
+    ZeroMemory( &wcex, sizeof( WNDCLASSEX ) );
+    wcex.cbSize = sizeof( WNDCLASSEX );
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
 
-    wcex.lpfnWndProc    =  WndProcDummy;
-  //  wcex.hInstance      = hInst;
-	wcex.hbrBackground  = (HBRUSH)(BLACK_BRUSH);
-   // wcex.lpszMenuName   = MAKEINTRESOURCE(IDC_MFPLAYBACK);
-    wcex.lpszClassName  = szWindowClass;
-	//wcex.lpszClassName = "MFBASICPLAYBACK"; // CHANGED 
+    wcex.lpfnWndProc = WndProcDummy;
+    //  wcex.hInstance      = hInst;
+    wcex.hbrBackground = ( HBRUSH )( BLACK_BRUSH );
+    // wcex.lpszMenuName   = MAKEINTRESOURCE(IDC_MFPLAYBACK);
+    wcex.lpszClassName = szWindowClass;
+    // wcex.lpszClassName = "MFBASICPLAYBACK"; // CHANGED
 
 
-    if (RegisterClassEx(&wcex) == 0)
-    {
-       // return FALSE;
+    if( RegisterClassEx( &wcex ) == 0 ) {
+        // return FALSE;
     }
 
 
     // Create the application window.
-    hwnd = CreateWindow(szWindowClass, L"", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, NULL, NULL);
-	//hwnd = CreateWindow("MFBASICPLAYBACK", "", WS_OVERLAPPEDWINDOW,
-	//	CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, NULL, NULL); // CHANGED
+    hwnd = CreateWindow( szWindowClass, L"", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, NULL, NULL );
+    // hwnd = CreateWindow("MFBASICPLAYBACK", "", WS_OVERLAPPEDWINDOW,
+    //	CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, NULL, NULL); // CHANGED
 
-    if (hwnd == 0)
-    {
+    if( hwnd == 0 ) {
         return FALSE;
     }
 
 
-	g_WMFVideoPlayers.push_back(std::pair<HWND,ofxWMFVideoPlayer*>(hwnd,this));
-	HRESULT hr = CPlayer::CreateInstance(hwnd, hwnd, &_player); 
+    g_WMFVideoPlayers.push_back( std::pair<HWND, ofxWMFVideoPlayer *>( hwnd, this ) );
+    HRESULT hr = CPlayer::CreateInstance( hwnd, hwnd, &_player );
 
 
-
-	LONG style2 = ::GetWindowLong(hwnd, GWL_STYLE);  
+    LONG style2 = ::GetWindowLong( hwnd, GWL_STYLE );
     style2 &= ~WS_DLGFRAME;
-    style2 &= ~WS_CAPTION; 
-    style2 &= ~WS_BORDER; 
+    style2 &= ~WS_CAPTION;
+    style2 &= ~WS_BORDER;
     style2 &= WS_POPUP;
-    LONG exstyle2 = ::GetWindowLong(hwnd, GWL_EXSTYLE);  
-    exstyle2 &= ~WS_EX_DLGMODALFRAME;  
-    ::SetWindowLong(hwnd, GWL_STYLE, style2);  
-    ::SetWindowLong(hwnd, GWL_EXSTYLE, exstyle2);  
+    LONG exstyle2 = ::GetWindowLong( hwnd, GWL_EXSTYLE );
+    exstyle2 &= ~WS_EX_DLGMODALFRAME;
+    ::SetWindowLong( hwnd, GWL_STYLE, style2 );
+    ::SetWindowLong( hwnd, GWL_EXSTYLE, exstyle2 );
 
 
-
-	_hwndPlayer = hwnd;
-
+    _hwndPlayer = hwnd;
 
 
-    UpdateWindow(hwnd);
-	
+    UpdateWindow( hwnd );
+
 
     return TRUE;
 }
 
 
+void ofxWMFVideoPlayer::lock()
+{
+    _player->m_pEVRPresenter->lockSharedTexture();
+}
 
+void ofxWMFVideoPlayer::unlock()
+{
+    _player->m_pEVRPresenter->unlockSharedTexture();
+}
