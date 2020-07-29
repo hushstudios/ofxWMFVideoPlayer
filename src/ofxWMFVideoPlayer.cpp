@@ -486,7 +486,6 @@ BOOL ofxWMFVideoPlayer::InitInstance()
     return TRUE;
 }
 
-
 void ofxWMFVideoPlayer::lock()
 {
     _player->m_pEVRPresenter->lockSharedTexture();
@@ -496,3 +495,4 @@ void ofxWMFVideoPlayer::unlock()
 {
     _player->m_pEVRPresenter->unlockSharedTexture();
 }
+
