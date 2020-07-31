@@ -59,10 +59,12 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     std::shared_ptr<std::thread> _thread;
     std::mutex                   _mutex;
     std::condition_variable      _condition;
-    std::atomic_bool             _running;
-    std::atomic_bool             _loading;
-    std::atomic_bool             _loaded;
+    volatile bool                bRunning;
+    volatile bool                bLoading;
+    volatile bool                bOpened;
     std::string                  _async_name;
+
+    mutable std::string _name;
 
   public:
     CPlayer *_player;
@@ -72,8 +74,9 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     ofxWMFVideoPlayer();
     ~ofxWMFVideoPlayer();
 
-    bool loadMovie( string name );
-    bool loadMovieAsync( string name );
+    bool               loadMovie( string name );
+    bool               loadMovieAsync( string name );
+    const std::string &getMovie() const { return _name; }
 
     void close();
     void update();
@@ -83,21 +86,21 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     void pause();
     void setPaused( bool bPause );
 
-    float getPosition();
-    float getDuration();
+    float getPosition() const;
+    float getDuration() const;
     float getFrameRate();
 
-    void setPosition( float pos );
+    void setPosition( float pos ) const;
 
     void  setVolume( float vol );
-    float getVolume();
+    float getVolume() const;
 
-    float getHeight();
-    float getWidth();
+    float getHeight() const;
+    float getWidth() const;
 
-    bool isPlaying();
-    bool isStopped();
-    bool isPaused();
+    bool isPlaying() const;
+    bool isStopped() const;
+    bool isPaused() const;
 
     void setLoop( bool isLooping );
     bool isLooping() { return _isLooping; }
@@ -114,15 +117,15 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     void setLoopState( ofLoopType loopType );
     bool getIsMovieDone();
 
-    bool isLoaded();
+    bool isLoaded() const;
 
-    unsigned char *getPixels();
-    ofPixels &     getPixelsRef() { return _pixels; }
-    ofTexture *    getTexture() { return &_tex; };
-    bool           setPixelFormat( ofPixelFormat pixelFormat );
-    ofPixelFormat  getPixelFormat();
+    unsigned char *      getPixels();
+    ofPixels &           getPixelsRef() { return _pixels; }
+    ofTexture *          getTexture() { return &_tex; };
+    static bool          setPixelFormat( ofPixelFormat pixelFormat );
+    static ofPixelFormat getPixelFormat();
 
-    bool isFrameNew();
+    static bool isFrameNew();
 
 
     void draw( int x, int y, int w, int h );
@@ -131,5 +134,5 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     HWND    getHandle() { return _hwndPlayer; }
     LRESULT WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam );
 
-    static void forceExit();
+    void forceExit() const;
 };
