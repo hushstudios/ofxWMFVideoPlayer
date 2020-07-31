@@ -4,11 +4,17 @@
 
 #include "ofxWMFVideoPlayer.h"
 
+#include "ofxTimeMeasurements.h"
 #include "ofxWMFVideoPlayerUtils.h"
+
+#include <utility>
 
 
 typedef std::pair<HWND, ofxWMFVideoPlayer *> PlayerItem;
 list<PlayerItem>                             g_WMFVideoPlayers;
+
+
+
 
 
 LRESULT CALLBACK WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam );
@@ -17,9 +23,9 @@ LRESULT CALLBACK WndProc( HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam 
 
 ofxWMFVideoPlayer *findPlayers( HWND hwnd )
 {
-    for( PlayerItem e : g_WMFVideoPlayers ) {
-        if( e.first == hwnd )
-            return e.second;
+	for (PlayerItem e : g_WMFVideoPlayers)
+	{
+		if (e.first == hwnd) return e.second;
     }
 
     return NULL;
@@ -29,16 +35,14 @@ ofxWMFVideoPlayer *findPlayers( HWND hwnd )
 int ofxWMFVideoPlayer::_instanceCount = 0;
 
 
-ofxWMFVideoPlayer::ofxWMFVideoPlayer()
-    : _player( NULL )
+ofxWMFVideoPlayer::ofxWMFVideoPlayer() : _player(NULL)
 {
 
     if( _instanceCount == 0 ) {
         if( !ofIsGLProgrammableRenderer() ) {
             if( wglewIsSupported( "WGL_NV_DX_interop" ) ) {
                 ofLogVerbose( "ofxWMFVideoPlayer" ) << "WGL_NV_DX_interop supported";
-            }
-            else {
+			}else{
                 ofLogError( "ofxWMFVideoPlayer" ) << "WGL_NV_DX_interop not supported. Upgrade your graphc drivers and try again.";
                 return;
             }
@@ -46,7 +50,8 @@ ofxWMFVideoPlayer::ofxWMFVideoPlayer()
 
 
         HRESULT hr = MFStartup( MF_VERSION );
-        if( !SUCCEEDED( hr ) ) {
+	  if (!SUCCEEDED(hr))
+    {
             ofLog( OF_LOG_ERROR, "ofxWMFVideoPlayer: Error while loading MF" );
         }
     }
@@ -55,7 +60,9 @@ ofxWMFVideoPlayer::ofxWMFVideoPlayer()
     _instanceCount++;
     this->InitInstance();
 
-
+    _loading = false;
+    _loaded = false;
+    _running = false;
     _waitForLoadedToPlay = false;
     _sharedTextureCreated = false;
     _wantToSetVolume = false;
@@ -66,6 +73,13 @@ ofxWMFVideoPlayer::ofxWMFVideoPlayer()
 
 ofxWMFVideoPlayer::~ofxWMFVideoPlayer()
 {
+    if( _thread && _thread->joinable() ) {
+        _running = false;
+        _condition.notify_all();
+        _thread->join();
+    }
+    _thread.reset();
+
     if( _player ) {
         _player->Shutdown();
         SafeRelease( &_player );
@@ -82,10 +96,15 @@ ofxWMFVideoPlayer::~ofxWMFVideoPlayer()
 
 void ofxWMFVideoPlayer::forceExit()
 {
-    if( _instanceCount != 0 ) {
+	if (_instanceCount != 0) 
+	{
         cout << "Shutting down MF some ofxWMFVideoPlayer remains" << endl;
         MFShutdown();
     }
+		
+
+		
+	
 }
 
 bool ofxWMFVideoPlayer::loadMovie( string name )
@@ -97,53 +116,103 @@ bool ofxWMFVideoPlayer::loadMovie( string name )
         ofLogError( "ofxWMFVideoPlayer" ) << "Player not created. Can't open the movie.";
         return false;
     }
-    DWORD fileAttr = GetFileAttributesA( ofToDataPath( name ).c_str() );
-    if( fileAttr == INVALID_FILE_ATTRIBUTES ) {
-        stringstream s;
-        s << "The video file '" << name << "'is missing.";
-        ofLog( OF_LOG_ERROR, "ofxWMFVideoPlayer:" + s.str() );
+
+    if( !openUrl( std::move( name ) ) )
+        return false;
+
+    _frameRate = 0.0; // reset frameRate as the new movie loaded might have a different value than previous one
+
+    createSharedTexture();
+
+    _waitForLoadedToPlay = false;
+
+    return _sharedTextureCreated;
+}
+
+bool ofxWMFVideoPlayer::loadMovieAsync( string name )
+{
+    if( !_player ) {
+        ofLogError( "ofxWMFVideoPlayer" ) << "Player not created. Can't open the movie.";
         return false;
     }
 
-    // cout << "Videoplayer[" << _id << "] loading " << name << endl;
+    if( !_thread ) {
+        _running = true;
+        _thread = std::make_shared<std::thread>( &ofxWMFVideoPlayer::threadFn, this );
+    }
 
-    HRESULT      hr = S_OK;
+    std::lock_guard<std::mutex> lock( _mutex );
+    _loading = true;
+    _loaded = false;
+    _async_name = name;
+    _condition.notify_one();
+
+    return true;
+}
+
+void ofxWMFVideoPlayer::threadFn()
+{
+    while( _running ) {
+        std::unique_lock<std::mutex> lock( _mutex );
+        _condition.wait( lock, [&]() { return !( _async_name.empty() && _running ); } );
+
+        if( _running ) {
+            const std::string name = _async_name;
+            _async_name.clear();
+            lock.unlock();
+
+            const bool success = openUrl( name );
+
+            lock.lock();
+            _loaded = success;
+        }
+    }
+}
+
+bool ofxWMFVideoPlayer::openUrl( std::string name ) const
+{
+    const auto fileAttr = GetFileAttributesA( ofToDataPath( name ).c_str() );
+    if( fileAttr == INVALID_FILE_ATTRIBUTES )
+        return false;
+
     string       s = ofToDataPath( name );
     std::wstring w( s.length(), L' ' );
     std::copy( s.begin(), s.end(), w.begin() );
 
+    return SUCCEEDED( _player->OpenURL( w.c_str() ) );
+}
 
-    hr = _player->OpenURL( w.c_str() );
-
-
-    _frameRate = 0.0; // reset frameRate as the new movie loaded might have a different value than previous one
-
-
+void ofxWMFVideoPlayer::createSharedTexture()
+{
+    TS_START( "WMF CreateSharedTexture" );
     if( !_sharedTextureCreated ) {
-
         _width = _player->getWidth();
         _height = _player->getHeight();
 
         _tex.allocate( _width, _height, GL_RGB, true );
 
-        _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
-        _sharedTextureCreated = true;
+        _sharedTextureCreated = _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
     }
     else {
         if( ( _width != _player->getWidth() ) || ( _height != _player->getHeight() ) ) {
-
             _player->m_pEVRPresenter->releaseSharedTexture();
+            _sharedTextureCreated = false;
 
             _width = _player->getWidth();
             _height = _player->getHeight();
 
             _tex.allocate( _width, _height, GL_RGB, true );
-            _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
+
+            _sharedTextureCreated = _player->m_pEVRPresenter->createSharedTexture( _width, _height, _tex.texData.textureID );
         }
     }
-    _waitForLoadedToPlay = false;
+    TS_STOP( "WMF CreateSharedTexture" );
+}
 
-    return false;
+void ofxWMFVideoPlayer::deleteSharedTexture()
+{
+    _player->m_pEVRPresenter->releaseSharedTexture();
+    _sharedTextureCreated = false;
 }
 
 
@@ -198,9 +267,19 @@ void ofxWMFVideoPlayer::update()
 {
     if( !_player )
         return;
-    if( ( _waitForLoadedToPlay ) && _player->GetState() == Paused ) {
+
+    std::unique_lock<std::mutex> lock( _mutex );
+    if( _loading && _loaded ) {
+        _loaded = false;
+        _loading = false;
+        _frameRate = 0.0; // reset frameRate as the new movie loaded might have a different value than previous one
+
+        createSharedTexture();
+    }
+    lock.unlock();
+
+    if( _waitForLoadedToPlay && _player->Play() ) {
         _waitForLoadedToPlay = false;
-        _player->Play();
     }
 
     if( ( _wantToSetVolume ) ) {
@@ -261,11 +340,13 @@ void ofxWMFVideoPlayer::setPaused( bool bPause )
 
 void ofxWMFVideoPlayer::play()
 {
-
     if( !_player )
         return;
-    if( _player->GetState() == OpenPending )
+
+    std::unique_lock<std::mutex> lock( _mutex );
+    if( _loading || _player->GetState() == OpenPending )
         _waitForLoadedToPlay = true;
+
     _player->Play();
 }
 
@@ -495,4 +576,3 @@ void ofxWMFVideoPlayer::unlock()
 {
     _player->m_pEVRPresenter->unlockSharedTexture();
 }
-

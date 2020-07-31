@@ -51,6 +51,18 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
 
     float _frameRate;
 
+    void threadFn();
+    bool openUrl( std::string name ) const;
+    void createSharedTexture();
+    void deleteSharedTexture();
+
+    std::shared_ptr<std::thread> _thread;
+    std::mutex                   _mutex;
+    std::condition_variable      _condition;
+    std::atomic_bool             _running;
+    std::atomic_bool             _loading;
+    std::atomic_bool             _loaded;
+    std::string                  _async_name;
 
   public:
     CPlayer *_player;
@@ -61,7 +73,8 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     ~ofxWMFVideoPlayer();
 
     bool loadMovie( string name );
-    // bool 				loadMovie(string name_left, string name_right) ;
+    bool loadMovieAsync( string name );
+
     void close();
     void update();
 
@@ -93,7 +106,7 @@ class ofxWMFVideoPlayer /*: public ofBaseVideoPlayer */ {
     void unbind();
 
     void lock();
-    void unlock(); 
+    void unlock();
 
     ofEvent<bool> videoLoadEvent;
 
